@@ -1,0 +1,57 @@
+name: 42
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  push:
+    branches: [main, master]
+    paths:
+      - "42.sh"
+      - "42.md"
+      - ".github/workflows/42.yml"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [forty_two]
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify 42.sh certificate
+        run: |
+          set -euo pipefail
+          BYTES=$(wc -c < 42.sh | tr -d ' ')
+          echo "bytes=$BYTES"
+          test "$BYTES" -lt 2048
+          rm -f state.json
+          LOG_TM_STATE=state.json CMD=step N=3 bash 42.sh | tee cert.json
+          python3 - <<'PY'
+          import json
+          o=json.load(open("cert.json"))
+          assert o.get("C") is True
+          assert o.get("CSA") is True and o.get("CG") is True
+          assert o.get("t")==3
+          assert o.get("G")==42
+          assert o.get("E")==[1,1,0,1]
+          assert o.get("n")==1 and o.get("p")==2
+          print("PASS step", "t=", o["t"], "G=", o["G"])
+          PY
+          LOG_TM_STATE=state.json CMD=reconstruct N=1 bash 42.sh | tee cert-recon.json
+          python3 - <<'PY'
+          import json
+          o=json.load(open("cert-recon.json"))
+          assert o.get("C") is True and o.get("CF") is True
+          assert o.get("CSA") is True and o.get("CG") is True
+          print("PASS reconstruct", "t=", o["t"], "CF=", o["CF"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 42-certificate
+          path: |
+            cert.json
+            cert-recon.json
